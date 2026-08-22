@@ -1,0 +1,6 @@
+{
+  "#login-button-typo": "#login-button",
+  "#user-id-totally-fake": "[data-test=\"username\"]",
+  "#password-id-fake": "#password",
+  "#login-button-fake": "#login-button"
+}
