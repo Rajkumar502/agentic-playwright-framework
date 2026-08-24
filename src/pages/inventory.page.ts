@@ -11,6 +11,14 @@ export class InventoryPage {
     return this.page.locator('.shopping_cart_link');
   }
 
+  private get sortDropdown() {
+    return this.page.locator('.product_sort_container');
+  }
+
+  private get firstInventoryItemName() {
+    return this.page.locator('.inventory_item_name').first();
+  }
+
   private productAddToCartButton(productName: string) {
     return this.page.locator(`.inventory_item:has-text("${productName}") button`);
   }
@@ -25,5 +33,13 @@ export class InventoryPage {
 
   async goToCart() {
     await this.cartLink.click();
+  }
+
+  async sortByPriceLowToHigh() {
+    await this.sortDropdown.selectOption('lohi');
+  }
+
+  async verifyFirstItemName(expectedName: string) {
+    await expect(this.firstInventoryItemName).toHaveText(expectedName);
   }
 }
