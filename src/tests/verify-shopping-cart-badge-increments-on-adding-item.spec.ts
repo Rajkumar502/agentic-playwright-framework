@@ -8,17 +8,17 @@ test.describe('SCRUM-1: Shopping Cart Badge', () => {
     const loginPage = new LoginPage(page);
     const inventoryPage = new InventoryPage(page);
 
-    // Step 1: Navigate and login as standard user
+    // Step 1: Login as standard user
     await loginPage.navigate();
     await loginPage.login(TestData.users.standard, TestData.passwords.standard);
 
-    // Verify we are on the inventory page
+    // Verify successful login to inventory page
     await expect(page).toHaveURL(TestData.urls.inventory);
 
-    // Step 2: Add product to cart
+    // Step 2: Add an item to the cart
     await inventoryPage.addItemToCart(TestData.products.bikeLight);
 
-    // Step 3: Verify cart badge updates to show count of 1
+    // Step 3: Verify the cart badge increments to show 1 item
     await inventoryPage.verifyCartBadgeCount('1');
   });
 });
