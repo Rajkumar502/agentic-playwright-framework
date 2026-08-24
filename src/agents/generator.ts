@@ -8,27 +8,47 @@ export class GeneratorAgent {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) throw new Error("❌ GEMINI_API_KEY missing in .env");
 
-        console.log(`🧠 [Gemini 3.5 Flash-Lite Architect]: Analyzing requirement & ensuring zero regressions...`);
+        console.log(`🧠 [Gemini 3.5 Flash-Lite Architect]: Generating test spec and updating page objects if needed...`);
 
-        // Read existing page objects if they exist so the AI preserves their methods
+        const testsDir = path.join(__dirname, '../tests');
         const pagesDir = path.join(__dirname, '../pages');
-        const loginPath = path.join(pagesDir, 'login.page.ts');
-        const existingLoginCode = fs.existsSync(loginPath) ? fs.readFileSync(loginPath, 'utf-8') : '';
+        const dataPath = path.join(__dirname, '../data/test-data.ts');
 
-        const prompt = `You are an elite enterprise Playwright architect using TypeScript. 
-Create or update a modular test spec for: "${userRequirement}".
+        // Read existing pages and test data to provide context to Gemini
+        const existingTestData = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf-8') : '';
+        const existingLogin = fs.existsSync(path.join(pagesDir, 'login.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'login.page.ts'), 'utf-8') : '';
+        const existingInventory = fs.existsSync(path.join(pagesDir, 'inventory.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'inventory.page.ts'), 'utf-8') : '';
+        const existingCheckout = fs.existsSync(path.join(pagesDir, 'checkout.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'checkout.page.ts'), 'utf-8') : '';
 
-EXISTING LOGIN PAGE CODE (You MUST preserve all existing methods like login(), navigate(), and add any new requested methods like getErrorMessageText without deleting old ones):
-${existingLoginCode}
+        const prompt = `You are an elite enterprise Playwright test automation architect using TypeScript. 
+Based on this requirement: "${userRequirement}", write a new Playwright test spec file named "${testFileName}".
 
-Return your response as a valid JSON object containing 5 keys. NO markdown formatting, raw JSON only:
+IMPORTANT CONTEXT (Use existing page objects and test data):
+- Existing Test Data: ${existingTestData}
+- Existing Login Page: ${existingLogin}
+- Existing Inventory Page: ${existingInventory}
+- Existing Checkout Page: ${existingCheckout}
+
+MODERN PLAYWRIGHT ARCHITECTURAL RULES (STRICTLY ENFORCED):
+1. **Web-First Assertions**: ALWAYS use Playwright's built-in auto-retrying assertions (e.g., \`await expect(page.getByRole(...)).toBeVisible()\`). Never use manual boolean checks like \`await locator.isVisible()\`.
+2. **Semantic Locators**: Prioritize user-facing semantic locators over brittle CSS or XPath selectors. Use \`page.getByRole()\`, \`page.getByTestId()\`, \`page.getByPlaceholder()\`, or \`page.getByText()\`.
+3. **POM & Lazy Getters**: All page objects must extend BasePage and use TypeScript lazy getters for locators (e.g., \`private get submitButton() { return this.page.getByRole('button', { name: 'Submit' }); }\`).
+4. **DRY Principle & Reusability**: Encapsulate all element interactions and assertions inside page object methods. Keep test spec files clean, concise, and focused entirely on the user journey.
+5. **Strict TypeScript**: No \`any\` types. Fully type all method parameters and return values.
+
+TECHNICAL CONVENTIONS:
+- Import test and expect from '../fixtures/agent.fixture'.
+- Import existing page classes and TestData properly.
+- If the test requires a new method or assertion helper on a page object that doesn't exist, you MUST provide the complete updated code for that page object.
+
+OUTPUT FORMAT:
+Return your response as a valid JSON object with ONLY these keys:
 {
-  "testData": "TypeScript content for src/data/test-data.ts",
-  "loginPage": "Updated TypeScript content for src/pages/login.page.ts keeping all old methods intact",
-  "inventoryPage": "TypeScript content for src/pages/inventory.page.ts",
-  "checkoutPage": "TypeScript content for src/pages/checkout.page.ts",
-  "testSpec": "TypeScript content for src/tests/${testFileName}"
-}`;
+  "testSpec": "TypeScript content for the new test file",
+  "targetPageName": "Optional: filename of the page to update, e.g. login.page.ts (leave empty string if no page update is needed)",
+  "updatedPageCode": "Optional: complete updated code for the target page including any new methods, otherwise empty string"
+}
+Do not include markdown code block formatting like \`\`\`json or backticks. Return raw JSON text only.`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`, {
             method: 'POST',
@@ -40,22 +60,20 @@ Return your response as a valid JSON object containing 5 keys. NO markdown forma
 
         const data = await response.json();
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const files = JSON.parse(rawText.trim().replace(/^```[a-z]*\n?/gm, '').replace(/```$/gm, '').trim());
+        const cleanJsonText = rawText.trim().replace(/^```[a-z]*\n?/gm, '').replace(/```$/gm, '').trim();
+        const result = JSON.parse(cleanJsonText);
 
-        const dataDir = path.join(__dirname, '../data');
-        const testsDir = path.join(__dirname, '../tests');
-
-        if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-        if (!fs.existsSync(pagesDir)) fs.mkdirSync(pagesDir, { recursive: true });
         if (!fs.existsSync(testsDir)) fs.mkdirSync(testsDir, { recursive: true });
 
-        // Safely write files
-        fs.writeFileSync(path.join(dataDir, 'test-data.ts'), files.testData);
-        fs.writeFileSync(loginPath, files.loginPage);
-        fs.writeFileSync(path.join(pagesDir, 'inventory.page.ts'), files.inventoryPage);
-        fs.writeFileSync(path.join(pagesDir, 'checkout.page.ts'), files.checkoutPage);
-        fs.writeFileSync(path.join(testsDir, testFileName), files.testSpec);
+        // 1. Write the new test file
+        fs.writeFileSync(path.join(testsDir, testFileName), result.testSpec);
+        console.log(`✨ [Generator Agent]: Successfully created new test file: src/tests/${testFileName}`);
 
-        console.log(`✨ [Generator Agent]: Successfully generated test and synchronized page models!`);
+        // 2. Automatically apply page updates if Gemini provided them
+        if (result.targetPageName && result.updatedPageCode && result.updatedPageCode.trim().length > 10) {
+            const targetPagePath = path.join(pagesDir, result.targetPageName);
+            fs.writeFileSync(targetPagePath, result.updatedPageCode);
+            console.log(`📁 [Generator Agent]: Automatically updated page object: src/pages/${result.targetPageName}`);
+        }
     }
 }

@@ -1,66 +1,67 @@
-import { test as base, Page, Locator } from '@playwright/test';
-import { HealerAgent } from '../agents/healer';
+import { test as base, expect, Page } from '@playwright/test';
+import { HealerAgent } from '../agents/healer'; // Point to your HealerAgent file path
 
 export const test = base.extend<{ page: Page }>({
     page: async ({ page }, use) => {
         const originalLocator = page.locator.bind(page);
+        const healer = new HealerAgent();
 
-        page.locator = (selector: string, options?: any): Locator => {
-            const loc = originalLocator(selector, options);
+        // Override page.locator with our self-healing proxy wrapper
+        page.locator = (selector: string, options?: any) => {
+            // Check cache first using your HealerAgent method
+            const cachedSelector = HealerAgent.getCachedSelector(selector);
+            let currentSelector = cachedSelector || selector;
+            
+            const loc = originalLocator(currentSelector, options);
 
-            // Helper to handle smart healing with slowness protection
-            const executeWithHealing = async (actionName: string, actionFn: (targetLoc: Locator) => Promise<void>) => {
-                let activeSelector = HealerAgent.getCachedSelector(selector) || selector;
-                let activeLoc = originalLocator(activeSelector, options);
+            // Methods to intercept (both actions and assertion checks)
+            const methodsToIntercept = [
+                'click', 'fill', 'type', 'press', 'selectOption', 
+                'check', 'uncheck', 'hover', 'focus', 
+                'isVisible', 'textContent', 'getAttribute'
+            ];
 
-                try {
-                    // Give normal Playwright auto-waiting a reasonable window (e.g., 5 seconds) 
-                    // to handle standard network slowness or animations.
-                    await actionFn(activeLoc);
-                } catch (error) {
-                    // BEFORE calling Gemini, check if the element actually exists in the DOM.
-                    // If count() > 0, it means the element IS there, but maybe unclickable/disabled (slowness/overlay).
-                    // Do NOT call AI yet; let Playwright handle it or throw a real timeout.
-                    const elementCount = await activeLoc.count();
-                    
-                    if (elementCount > 0) {
-                        console.log(`⏳ [Agentic Framework]: Element found for "${activeSelector}" but action timed out (likely UI slowness/animation). Retrying natively...`);
-                        // Retry once more with full timeout, bypassing AI
-                        await actionFn(activeLoc);
-                        return;
+            const proxyHandler = {
+                get(target: any, prop: string | symbol, receiver: any) {
+                    const originalMethod = Reflect.get(target, prop, receiver);
+
+                    if (typeof originalMethod === 'function' && methodsToIntercept.includes(prop as string)) {
+                        return async (...args: any[]) => {
+                            try {
+                                return await originalMethod.apply(target, args);
+                            } catch (error) {
+                                console.log(`⚠️ Locator operation failed with "${currentSelector}". Invoking HealerAgent...`);
+                                
+                                // Capture DOM snippet for Gemini context
+                                const domSnippet = await page.content();
+                                
+                                // Call your HealerAgent to analyze and heal via Gemini 3.5 Flash-Lite
+                                const healedSelector = await healer.healLocatorWithLLM(currentSelector, domSnippet);
+
+                                if (healedSelector && healedSelector !== currentSelector) {
+                                    // Retry operation with the newly healed selector
+                                    currentSelector = healedSelector;
+                                    const healedLoc = originalLocator(healedSelector, options);
+                                    const healedMethod = Reflect.get(healedLoc, prop, receiver);
+                                    return await healedMethod.apply(healedLoc, args);
+                                }
+                                throw error;
+                            }
+                        };
                     }
 
-                    // If count() === 0, the locator is genuinely missing or broken (changed ID/class).
-                    console.log(`\n🤖 [Agentic AI]: Locator "${activeSelector}" returned 0 elements (Structural change detected).`);
-                    console.log(`🧠 [Gemini 3.5 Flash-Lite]: Waking up to heal selector...`);
-                    
-                    const domSnippet = await originalLocator('form').innerHTML().catch(() => "<div>Form not found</div>");
-                    const healer = new HealerAgent();
-                    const healedSelector = await healer.healLocatorWithLLM(selector, domSnippet);
-
-                    console.log(`🔄 [Agentic AI]: Retrying ${actionName} with healed selector: "${healedSelector}"`);
-                    const healedLoc = originalLocator(healedSelector, options);
-                    await actionFn(healedLoc);
+                    if (typeof originalMethod === 'function') {
+                        return originalMethod.bind(target);
+                    }
+                    return originalMethod;
                 }
             };
 
-            loc.click = async (clickOptions?: any) => {
-                await executeWithHealing('click', async (targetLoc) => {
-                    await targetLoc.click({ ...clickOptions, timeout: 5000 });
-                });
-            };
-
-            loc.fill = async (value: string, fillOptions?: any) => {
-                await executeWithHealing('fill', async (targetLoc) => {
-                    await targetLoc.fill(value, { ...fillOptions, timeout: 5000 });
-                });
-            };
-
-            return loc;
+            return new Proxy(loc, proxyHandler);
         };
 
         await use(page);
     }
 });
 
-export { expect } from '@playwright/test';
+export { expect };
