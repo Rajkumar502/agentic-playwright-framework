@@ -35,6 +35,10 @@ export class CheckoutPage {
     return this.page.locator('.complete-header');
   }
 
+  private get errorMessage() {
+    return this.page.locator('[data-test="error"]');
+  }
+
   private productRemoveButton(productName: string) {
     return this.page.locator(`.cart_item:has-text("${productName}") button`);
   }
@@ -65,5 +69,10 @@ export class CheckoutPage {
   async verifyOrderSuccessMessage(expectedMessage: string) {
     await expect(this.completeHeader).toBeVisible();
     await expect(this.completeHeader).toHaveText(expectedMessage);
+  }
+
+  async verifyErrorMessageContains(expectedMessage: string) {
+    await expect(this.errorMessage).toBeVisible();
+    await expect(this.errorMessage).toContainText(expectedMessage);
   }
 }
