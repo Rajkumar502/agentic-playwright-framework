@@ -19,6 +19,14 @@ export class InventoryPage {
     return this.page.locator('.inventory_item_name').first();
   }
 
+  private get burgerMenuButton() {
+    return this.page.getByRole('button', { name: 'Open Menu' });
+  }
+
+  private get logoutSidebarLink() {
+    return this.page.getByRole('link', { name: 'Logout' });
+  }
+
   private productAddToCartButton(productName: string) {
     return this.page.locator(`.inventory_item:has-text("${productName}") button`);
   }
@@ -41,5 +49,14 @@ export class InventoryPage {
 
   async verifyFirstItemName(expectedName: string) {
     await expect(this.firstInventoryItemName).toHaveText(expectedName);
+  }
+
+  async openSidebarMenu() {
+    await this.burgerMenuButton.click();
+  }
+
+  async clickLogout() {
+    await expect(this.logoutSidebarLink).toBeVisible();
+    await this.logoutSidebarLink.click();
   }
 }
