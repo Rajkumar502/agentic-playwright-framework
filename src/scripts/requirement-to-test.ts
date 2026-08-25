@@ -165,6 +165,49 @@ async function runRequirementParser() {
             failureReason = `TypeScript Type-Checking Failed after ${maxRetries} tries:\n${qualityErrorOutput.slice(0, 400)}`;
         } else {
             failureReason = `Regression Suite Failed.\n- **AI Root Cause Analysis (RCA):** ${rcaClassification}\n- **Details:**\n${executionOutput.slice(0, 400)}`;
+
+            // 🐛 AUTOMATED DEFECT TICKET GENERATION FOR APP BUGS
+            if (rcaClassification.includes('True Application Bug')) {
+                try {
+                    const projectKey = issueKey.split('-')[0]; // e.g., 'SCRUM'
+                    const bugSummary = `Regression failure detected during automation of ${issueKey}`;
+                    const bugDescription = `The autonomous SDLC pipeline detected a functional defect during regression testing.\n\nFailing Test: ${testFileName}\nRequirement: ${userRequirement}\n\nRCA Findings:\n${executionOutput.slice(0, 1000)}`;
+                    
+                    if (typeof (JiraClient as any).createBugTicket === 'function') {
+                        const newBugKey = await (JiraClient as any).createBugTicket(projectKey, bugSummary, bugDescription);
+                        failureReason += `\n- **Automated Action:** Created Jira Bug Ticket **[${newBugKey}]** for engineering investigation.`;
+                    }
+                } catch (bugErr: any) {
+                    console.warn(`⚠️ [Jira Sync]: Could not auto-create bug ticket: ${bugErr.message}`);
+                }
+            }
+            // ☣️ AUTOMATED QUARANTINE FOR FLAKY TESTS
+            else if (rcaClassification.includes('Environmental / Network Flake')) {
+                try {
+                    console.warn(`☣️ [Quarantine Agent]: Flake detected. Isolating flaky test...`);
+                    const quarantineDir = path.join(__dirname, '../tests/quarantine');
+                    if (!fs.existsSync(quarantineDir)) fs.mkdirSync(quarantineDir, { recursive: true });
+
+                    const sourcePath = path.join(__dirname, '../tests', testFileName);
+                    const destPath = path.join(quarantineDir, testFileName);
+
+                    if (fs.existsSync(sourcePath)) {
+                        fs.renameSync(sourcePath, destPath);
+                        console.log(`☣️ [Quarantine Agent]: Moved ${testFileName} to src/tests/quarantine/`);
+                        
+                        const projectKey = issueKey.split('-')[0];
+                        const bugSummary = `[Flaky Test] Environmental instability in ${testFileName}`;
+                        const bugDescription = `The autonomous pipeline detected environmental flakiness and quarantined the test.\n\nTest File: ${testFileName}\nLogs:\n${executionOutput.slice(0, 500)}`;
+                        
+                        if (typeof (JiraClient as any).createBugTicket === 'function') {
+                            const newBugKey = await (JiraClient as any).createBugTicket(projectKey, bugSummary, bugDescription);
+                            failureReason += `\n- **Automated Action:** Test quarantined to \`src/tests/quarantine/\` and Jira Bug Ticket **[${newBugKey}]** created for stability review.`;
+                        }
+                    }
+                } catch (quarantineErr: any) {
+                    console.warn(`⚠️ [Quarantine Action Failed]: ${quarantineErr.message}`);
+                }
+            }
         }
 
         await JiraClient.addComment(
@@ -212,6 +255,12 @@ async function fetchJiraTicketDetails(issueKey: string): Promise<{ summary: stri
         method: 'GET',
         headers: { 'Authorization': `Basic ${credentials}`, 'Accept': 'application/json' }
     });
+
+    if (response.status === 404) {
+        console.error(`\n❌ [Jira API Error]: Ticket "${issueKey}" was not found in your Jira workspace (404).`);
+        console.error(`👉 Please verify the ticket key or create it in Jira before triggering the pipeline.\n`);
+        process.exit(1);
+    }
 
     if (!response.ok) {
         throw new Error(`Failed to fetch Jira ticket ${issueKey}. Status: ${response.status}`);

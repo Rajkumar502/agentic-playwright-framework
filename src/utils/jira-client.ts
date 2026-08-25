@@ -67,4 +67,53 @@ export class JiraClient {
             // Silently handle transition error if workflow state differs
         }
     }
+
+    // Add this inside your JiraClient class in src/utils/jira-client.ts
+    static async createBugTicket(projectKey: string, summary: string, description: string): Promise<string> {
+    const jiraUrl = process.env.JIRA_URL;
+    const jiraEmail = process.env.JIRA_EMAIL;
+    const jiraToken = process.env.JIRA_API_TOKEN;
+
+    if (!jiraUrl || !jiraEmail || !jiraToken) {
+        throw new Error(`❌ Jira credentials missing in .env!`);
+    }
+
+    const credentials = Buffer.from(`${jiraEmail}:${jiraToken}`).toString('base64');
+    
+    // Extract project prefix (e.g., 'SCRUM' from 'SCRUM-3')
+    const response = await fetch(`${jiraUrl}/rest/api/3/issue`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Basic ${credentials}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            fields: {
+                project: { key: projectKey },
+                summary: `[AI Bug Report] ${summary}`,
+                description: {
+                    type: "doc",
+                    version: 1,
+                    content: [
+                        {
+                            type: "paragraph",
+                            content: [{ type: "text", text: description }]
+                        }
+                    ]
+                },
+                issuetype: { name: "Bug" }
+            }
+        })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Failed to create Jira bug ticket. Status: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json() as any;
+    console.log(`🐛 [Jira API]: Automatically created defect ticket: ${data.key}`);
+    return data.key;
+    }
 }

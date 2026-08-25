@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { ReviewerAgent } from './reviewer';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -18,6 +19,7 @@ export class GeneratorAgent {
         const existingTestData = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf-8') : '';
         const existingLogin = fs.existsSync(path.join(pagesDir, 'login.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'login.page.ts'), 'utf-8') : '';
         const existingInventory = fs.existsSync(path.join(pagesDir, 'inventory.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'inventory.page.ts'), 'utf-8') : '';
+        const existingCart = fs.existsSync(path.join(pagesDir, 'cart.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'cart.page.ts'), 'utf-8') : '';
         const existingCheckout = fs.existsSync(path.join(pagesDir, 'checkout.page.ts')) ? fs.readFileSync(path.join(pagesDir, 'checkout.page.ts'), 'utf-8') : '';
 
         const prompt = `You are an elite enterprise Playwright test automation architect using TypeScript. 
@@ -27,6 +29,7 @@ IMPORTANT CONTEXT (Use existing page objects and test data):
 - Existing Test Data: ${existingTestData}
 - Existing Login Page: ${existingLogin}
 - Existing Inventory Page: ${existingInventory}
+- Existing Cart Page: ${existingCart}
 - Existing Checkout Page: ${existingCheckout}
 
 MODERN PLAYWRIGHT ARCHITECTURAL RULES (STRICTLY ENFORCED):
@@ -36,16 +39,18 @@ MODERN PLAYWRIGHT ARCHITECTURAL RULES (STRICTLY ENFORCED):
 4. **DRY Principle & Reusability**: Encapsulate all element interactions and assertions inside page object methods. Keep test spec files clean, concise, and focused entirely on the user journey.
 5. **Strict TypeScript**: No \`any\` types. Fully type all method parameters and return values.
 
-TECHNICAL CONVENTIONS:
-- Import test and expect from '../fixtures/agent.fixture'.
-- Import existing page classes and TestData properly.
+TECHNICAL CONVENTIONS & EXACT RELATIVE PATHS:
+- Since all test spec files are saved directly inside the 'src/tests/' directory, you MUST use these exact relative import paths:
+  - Import test/expect: \`import { test, expect } from '../fixtures/agent.fixture';\`
+  - Import page objects: \`import { LoginPage } from '../pages/login.page';\` (or inventory/cart/checkout/etc.)
+  - Import test data: \`import { TestData } from '../data/test-data';\`
 - If the test requires a new method or assertion helper on a page object that doesn't exist, you MUST provide the complete updated code for that page object.
 
 OUTPUT FORMAT:
 Return your response as a valid JSON object with ONLY these keys:
 {
   "testSpec": "TypeScript content for the new test file",
-  "targetPageName": "Optional: filename of the page to update, e.g. login.page.ts (leave empty string if no page update is needed)",
+  "targetPageName": "Optional: filename of the page to update, e.g. cart.page.ts (leave empty string if no page update is needed)",
   "updatedPageCode": "Optional: complete updated code for the target page including any new methods, otherwise empty string"
 }
 Do not include markdown code block formatting like \`\`\`json or backticks. Return raw JSON text only.`;
@@ -62,6 +67,21 @@ Do not include markdown code block formatting like \`\`\`json or backticks. Retu
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         const cleanJsonText = rawText.trim().replace(/^```[a-z]*\n?/gm, '').replace(/```$/gm, '').trim();
         const result = JSON.parse(cleanJsonText);
+
+        // 🛡️ MULTI-AGENT REVIEW GATE (Passing Jira Requirement for Traceability)
+        console.log(`🧐 [Reviewer Agent]: Initiating Principal SDET peer review & traceability check...`);
+        const reviewer = new ReviewerAgent();
+        const review = await reviewer.reviewCode(result.testSpec, testFileName, userRequirement);
+
+        console.log(`📊 [Reviewer Score]: ${review.score}/100`);
+        console.log(`💬 [Reviewer Feedback]: ${review.feedback}`);
+
+        if (!review.approved) {
+            console.error(`❌ [Review Gate Failed]: Reviewer Agent rejected the generated code due to missing criteria or anti-patterns.`);
+            console.error(`Required Fixes:`, review.requiredFixes);
+            throw new Error(`Pipeline halted: Code failed multi-agent quality & traceability review.`);
+        }
+        console.log(`✨ [Reviewer Approved]: Code successfully satisfies all Jira acceptance criteria!`);
 
         if (!fs.existsSync(testsDir)) fs.mkdirSync(testsDir, { recursive: true });
 
