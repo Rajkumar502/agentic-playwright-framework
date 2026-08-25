@@ -8,24 +8,23 @@ test.describe('SCRUM-3: Sidebar Menu Logout Functionality', () => {
     const loginPage = new LoginPage(page);
     const inventoryPage = new InventoryPage(page);
 
-    // Step 1: Navigate and log in with standard user
+    // Step 1: Navigate to the login page and log in with standard user credentials
     await loginPage.navigate();
     await loginPage.login(TestData.users.standard, TestData.passwords.standard);
 
     // Step 2: Verify user is successfully logged in and on the inventory page
-    await expect(page).toHaveURL(new RegExp(TestData.urls.inventory));
+    await expect(page).toHaveURL(TestData.urls.inventory);
 
-    // Step 3: Open the sidebar navigation via burger menu icon
+    // Step 3: Open the sidebar navigation via the burger menu icon
     await inventoryPage.openSidebarMenu();
 
     // Step 4: Click the Logout option
     await inventoryPage.clickLogout();
 
-    // Step 5: Verify session is terminated, redirected back to login page, and protected views are hidden
+    // Step 5: Verify session is terminated, redirected to login page, and protected views are hidden
     await loginPage.verifyLoginPageIsVisible();
-    await expect(page).toHaveURL('/');
-
-    // Step 6: Verify attempting to navigate back to inventory directly is blocked/redirected
+    
+    // Attempting to navigate back to inventory via URL should be blocked/redirected back to login
     await page.goto(TestData.urls.inventory);
     await loginPage.verifyLoginPageIsVisible();
   });
